@@ -1,0 +1,204 @@
+# ACTIVIDAD 2: Del problema a la estructura (20 parcelas)
+
+#  1. ENTIDADES Y DATOS 
+# Finca/Zona: nombre | Parcela: id, zona, estado
+# Sensor: código, tipo | Medición: variable, valor, hora | Alerta: parcela, mensaje
+
+
+class Nodo:
+    def __init__(self, dato):
+        self.dato = dato
+        self.siguiente = None  # Puntero
+
+
+#  LISTA: mediciones de una parcela 
+class ListaMediciones:
+    def __init__(self):
+        self.cabeza = None
+        self.ultimo = None
+
+    def lista_vacia(self):
+        return self.cabeza is None
+
+    def insertar_final(self, medicion):
+        nuevo = Nodo(medicion)
+        if self.lista_vacia():
+            self.cabeza = self.ultimo = nuevo
+            return
+        self.ultimo.siguiente = nuevo
+        self.ultimo = nuevo
+
+    def promedio(self, variable):
+        actual = self.cabeza
+        suma = 0
+        cantidad = 0
+        while actual is not None:
+            if actual.dato["variable"] == variable:
+                suma += actual.dato["valor"]
+                cantidad += 1
+            actual = actual.siguiente
+        if cantidad == 0:
+            return None
+        return suma / cantidad
+
+    def mostrar(self):
+        if self.lista_vacia():
+            print("Sin mediciones.")
+            return
+        actual = self.cabeza
+        while actual is not None:
+            print(f"[{actual.dato['variable']}={actual.dato['valor']}] -> ", end="")
+            actual = actual.siguiente
+        print("fin de la lista")
+
+
+# COLA: alertas pendientes (FIFO) 
+class ColaAlertas:
+    def __init__(self):
+        self.frente = None
+        self.final = None
+
+    def cola_vacia(self):
+        return self.frente is None
+
+    def encolar(self, alerta):
+        nuevo = Nodo(alerta)
+        if self.cola_vacia():
+            self.frente = self.final = nuevo
+            return
+        self.final.siguiente = nuevo
+        self.final = nuevo
+
+    def desencolar(self):
+        if self.cola_vacia():
+            return None
+        alerta = self.frente.dato
+        self.frente = self.frente.siguiente
+        if self.frente is None:
+            self.final = None
+        return alerta
+
+    def mostrar(self):
+        if self.cola_vacia():
+            print("No hay alertas pendientes.")
+            return
+        actual = self.frente
+        while actual is not None:
+            print(f"[{actual.dato[0]}: {actual.dato[1]}] -> ", end="")
+            actual = actual.siguiente
+        print("fin de la cola")
+
+
+#  ÁRBOL: Finca -> Zonas -> Parcelas 
+class NodoArbol:
+    def __init__(self, nombre):
+        self.nombre = nombre
+        self.hijos = []
+        self.mediciones = ListaMediciones()
+
+    def agregar_hijo(self, hijo):
+        self.hijos.append(hijo)
+
+    def recorrer(self, nivel=0):  # Recursivo
+        print("   " * nivel + self.nombre)
+        for hijo in self.hijos:
+            hijo.recorrer(nivel + 1)
+
+    def buscar(self, nombre):  # Recursivo
+        if self.nombre == nombre:
+            return self
+        for hijo in self.hijos:
+            encontrado = hijo.buscar(nombre)
+            if encontrado is not None:
+                return encontrado
+        return None
+
+
+# GRAFO: red de riego entre parcelas 
+class GrafoRiego:
+    def __init__(self):
+        self.conexiones = {}  # Lista de adyacencia
+
+    def conectar(self, a, b):
+        self.conexiones.setdefault(a, []).append(b)
+        self.conexiones.setdefault(b, []).append(a)
+
+    def vecinos(self, parcela):
+        return self.conexiones.get(parcela, [])
+
+
+#  SISTEMA 
+class SistemaMonitoreo:
+    LIMITES = {"humedad": 30, "temperatura": 35, "nivel_agua": 20}
+
+    def __init__(self):
+        self.finca = NodoArbol("Finca")
+        self.alertas = ColaAlertas()
+        self.riego = GrafoRiego()
+        for z in range(1, 3):                       # 2 zonas
+            zona = NodoArbol(f"Zona {z}")
+            for p in range(1, 11):                  # 10 parcelas por zona = 20
+                zona.agregar_hijo(NodoArbol(f"P{(z - 1) * 10 + p}"))
+            self.finca.agregar_hijo(zona)
+        for i in range(1, 20):                      # Parcelas vecinas en el riego
+            self.riego.conectar(f"P{i}", f"P{i + 1}")
+
+    # Operación 1: insertar medición
+    def insertar_medicion(self, parcela, variable, valor, hora):
+        nodo = self.finca.buscar(parcela)           # Operación 2: buscar
+        if nodo is None:
+            print(f"La parcela {parcela} no existe.")
+            return
+        nodo.mediciones.insertar_final({"variable": variable, "valor": valor, "hora": hora})
+        self.generar_alerta(parcela, variable, valor)  # Operación 3
+
+    # Operación 3: generar alerta
+    def generar_alerta(self, parcela, variable, valor):
+        limite = self.LIMITES[variable]
+        if variable == "temperatura" and valor > limite:
+            self.alertas.encolar((parcela, "Temperatura alta"))
+        elif variable != "temperatura" and valor < limite:
+            self.alertas.encolar((parcela, f"{variable} baja"))
+
+    # Operación 4: atender la siguiente alerta
+    def atender_alerta(self):
+        alerta = self.alertas.desencolar()
+        if alerta is None:
+            print("No hay alertas por atender.")
+        else:
+            print(f"Atendiendo alerta de {alerta[0]}: {alerta[1]}")
+        return alerta
+
+    # Operación 5: promedio por parcela
+    def promedio(self, parcela, variable):
+        return self.finca.buscar(parcela).mediciones.promedio(variable)
+
+
+# ---------- PRUEBA ----------
+sistema = SistemaMonitoreo()
+
+print("=== Árbol principal ===")
+sistema.finca.recorrer()
+
+sistema.insertar_medicion("P1", "humedad", 25, "08:00")
+sistema.insertar_medicion("P4", "temperatura", 38, "08:00")
+sistema.insertar_medicion("P1", "humedad", 35, "09:00")
+sistema.insertar_medicion("P7", "nivel_agua", 15, "09:00")
+
+print("\n=== Mediciones de P1 ===")
+sistema.finca.buscar("P1").mediciones.mostrar()
+
+print("\n=== Cola de alertas ===")
+sistema.alertas.mostrar()
+
+print()
+sistema.atender_alerta()
+print("Promedio humedad P1:", sistema.promedio("P1", "humedad"))
+print("Vecinos de P5 en la red de riego:", sistema.riego.vecinos("P5"))
+
+# ---------- JUSTIFICACIÓN ----------
+print("\n=== JUSTIFICACIÓN ===")
+print("Árbol: finca -> zonas -> parcelas es una jerarquía padre-hijo y se recorre por niveles.")
+print("Lista: las mediciones de una parcela son una secuencia en el tiempo que crece al final.")
+print("Cola: las alertas se atienden en el orden en que llegan (FIFO).")
+print("Grafo: la red de riego tiene relaciones múltiples entre parcelas, no solo jerárquicas.")
